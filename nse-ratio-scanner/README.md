@@ -61,6 +61,21 @@ Telegram, the webhook and the log announce it only the first time it appears tha
 | `ALERT_MAX_CAPITAL` | `300000` | total capital (SPAN + ELM + debit) |
 | `ALERT_TOP_N` | `5` | at most this many setups, one per stock |
 
+## Dhan margin check (optional, read-only)
+
+Set `DHAN_ACCESS_TOKEN` (and optionally `DHAN_CLIENT_ID`) in `.env`. Each cycle, the found setups, shortlists and
+top 3 are re-priced by Dhan's basket margin calculator, with your existing positions and orders excluded. Alerts then
+report Dhan's figure and say so in `margin_source`. A setup whose Dhan margin exceeds `ALERT_MAX_CAPITAL` is dropped.
+
+`scanner/dhan.py` can call only `POST /v2/margincalculator/multi`, `POST /v2/margincalculator` and
+`GET /v2/fundlimit` (used only to read your client ID). Any other path raises an error before a request is sent, and
+no order-placing code exists. A Dhan access token can still place orders if misused, so keep `.env` private and revoke
+tokens you no longer need. The host also needs `api.dhan.co` and `images.dhan.co` (the instrument list).
+
+Tested on 23-Nov-2026 against Dhan: across 18 shortlisted structures (hedged 2:3:1 and 1:2:1, and uncapped 1:2 and
+2:3 ratios), the scanner's NSE estimate was within 0–1.6% of Dhan's figure. The one large gap was a naked short call,
+where Dhan charged about 40% more SPAN. Alerts use the Dhan figure whenever a token is set.
+
 For Telegram, set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`. For your own endpoint, set `WEBHOOK_URL`: each new
 setup is POSTed there as JSON.
 
@@ -77,8 +92,9 @@ setup is POSTed there as JSON.
 
 ## Limits
 
-* **Margin is unverified.** The margin shown is computed from NSE's SPAN risk arrays and ELM file. Your broker's live
-  basket margin may differ; check it in the basket before trading.
+* **Margin.** Without a Dhan token, margin is an estimate from NSE's SPAN risk arrays and ELM file. With a token, alerted
+  and shortlisted setups show Dhan's own figure. Dhan marks these as indicative for the current session, so re-check in
+  the basket before trading.
 * **Physical settlement.** Stock options settle physically. Delivery margins apply from four days before expiry, so
   close positions before then.
 * **Model outputs, not forecasts.** Probabilities and expected values come from the IV smile and realised volatility.

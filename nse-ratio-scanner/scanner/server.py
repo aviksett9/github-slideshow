@@ -15,6 +15,7 @@ from .rank import rank
 from .detail import run_details
 from .report import render, page
 from .mcpclient import Client
+from .dhan import Dhan
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("server")
@@ -24,6 +25,32 @@ STATUS = {"state": "starting", "last_run": None, "last_ok": None, "last_error": 
 RUN_LOCK = threading.Lock()
 TRIGGER = threading.Event()
 CLI = Client("scan")
+DHAN = Dhan()
+
+
+def dhan_verify(cands, exp_date):
+    """Attach Dhan's live basket margin to each candidate (read-only margin calculator)."""
+    if not DHAN.enabled or not cands:
+        return
+    try:
+        DHAN.load_master(data.path("cache", "x")[:-1])
+    except Exception as e:
+        log.warning("Dhan scrip master unavailable: %s", e)
+        return
+    done = {}
+    for c in cands:
+        k = (c["sym"], c["cp"], tuple((l["K"], l["lots"]) for l in c["legs"]))
+        if k in done:
+            c.update(done[k]); continue
+        try:
+            r = DHAN.basket_margin(c["sym"], exp_date, c["cp"], c["legs"], c["lot"])
+            r.pop("raw", None)
+            upd = {"dhan": r}
+        except Exception as e:
+            upd = {"dhan_error": str(e)[:120]}
+            log.warning("Dhan margin %s: %s", c["sym"], e)
+        c.update(upd); done[k] = upd
+        time.sleep(0.25)
 
 
 def _strip(c):
@@ -115,10 +142,13 @@ def run_cycle(force=False):
         vt = verify(DT, E.EXPIRY_LABEL)
         meta = build_meta(RK, DT, today, exp_date, mkt, span_state)
         meta["verify_time"] = vt or "–"
+        meta["dhan"] = DHAN.enabled
+        picks = alerts.select(RK)
+        dhan_verify(picks + [d["cand"] for d in DT.values()] + [c for v in RK["lists"].values() for c in v], exp_date)
+        found = alerts.finalize(picks, meta["events"])
         html_body = render(RK, DT, meta)
         with open(data.path("report", "index.html"), "w", encoding="utf-8") as f:
             f.write(page(html_body))
-        found = alerts.find(RK, meta["events"])
         new = alerts.process(found, scan_now.isoformat(timespec="seconds"))
         latest = {"scan_time": scan_now.isoformat(timespec="seconds"), "expiry": E.EXPIRY_LABEL, "market": mkt,
                   "span_file": span_state.get("file"), "scanned": len(RK["scanned"]), "skipped": RK["skipped"],

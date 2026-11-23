@@ -290,13 +290,15 @@ def scan_symbol(sym, lot, span_opts, elm, hv, now):
         span_req = np.maximum(scan - nov, 0)
         short_m = np.where(q < 0, M[idx], 0)
         elm_rate = np.where(np.abs(short_m) > 0.30, elm_otm, elm_oth)
-        elm_amt = (np.where(q < 0, -qs, 0) * S * elm_rate).sum(1)
+        # ELM notional uses the previous close (matches NSE/Dhan exposure figures), falling back to live spot
+        Pn = float((hv or {}).get("prev_close") or S)
+        elm_amt = (np.where(q < 0, -qs, 0) * Pn * elm_rate).sum(1)
         margin = span_req + elm_amt                    # SPAN (scan risk net of option value) + ELM
-        # funds needed = SPAN-net-of-NOV + ELM + signed premium (credit offsets the short-option value in NOV);
-        # floored at ELM + any debit so a credit never makes capital look smaller than the exposure margin
-        capital = np.maximum(margin + prem, elm_amt + np.maximum(prem, 0))
         long_prem = (np.where(q > 0, qs, 0) * px).sum(1)
-        peak = long_prem + margin                      # buy legs first, before short premium is credited
+        # capital as the broker blocks it: SPAN + ELM + full premium of the buy legs
+        # (verified against Dhan's basket margin calculator: short-leg premium is not netted off)
+        capital = margin + long_prem
+        peak = capital
         # tails
         net_q = q.sum(1)
         if cp == "C":

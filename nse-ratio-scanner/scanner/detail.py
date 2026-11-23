@@ -86,13 +86,14 @@ class Pos:
         nov = sum(q * r["p"] for q, r in qs)
         span_req = max(scan - nov, 0)
         e = ELM.get(self.sym, {})
-        elm = sum(-l["lots"] * self.lot * self.S * (e.get("OTM", .0525) if abs(l["K"] / self.S - 1) > .30 else e.get("OTH", .035))
+        pn = (E.load_hv(self.sym) or {}).get("prev_close") or self.S     # ELM notional: previous close
+        elm = sum(-l["lots"] * self.lot * pn * (e.get("OTM", .0525) if abs(l["K"] / self.S - 1) > .30 else e.get("OTH", .035))
                   for l in self.legs if l["lots"] < 0)
         prem = self.prem()
-        capital = max(span_req + elm + prem, elm + max(prem, 0))
         long_prem = sum(l["lots"] * self.lot * l["px"] for l in self.legs if l["lots"] > 0)
+        capital = span_req + elm + long_prem      # as the broker blocks it (buy premium in full)
         return {"scan": scan, "nov": nov, "span_req": span_req, "elm": elm, "margin": span_req + elm,
-                "prem": prem, "capital": capital, "peak": long_prem + span_req + elm, "long_prem": long_prem,
+                "prem": prem, "capital": capital, "peak": capital, "long_prem": long_prem,
                 "scenarios": scen}
 
 

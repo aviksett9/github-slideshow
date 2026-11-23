@@ -29,16 +29,23 @@ def summarize(c, events):
         "key": _key(c), "symbol": c["sym"], "type": side, "ratio": c["ratio"], "legs": legs, "lot": c["lot"],
         "spot": c["spot"], "quote_time": c["fetch"], "net_premium": round(c["prem"], 2),
         "debit_or_credit": "debit" if c["prem"] > 0 else "credit",
-        "capital_required": round(c["capital"]), "span": round(c["span_req"]), "elm": round(c["elm"]),
+        "capital_required": round(c["dhan"]["total"]) if c.get("dhan") else round(c["capital"]),
+        "margin_source": (f'Dhan basket margin, checked {c["dhan"]["checked_at"][11:16]} IST' if c.get("dhan")
+                          else "NSE SPAN + ELM estimate (unverified)" + (f' – Dhan check failed: {c["dhan_error"]}' if c.get("dhan_error") else "")),
+        "nse_estimate": round(c["capital"]),
+        "span": round(c["dhan"]["span"]) if c.get("dhan") and c["dhan"].get("span") is not None else round(c["span_req"]),
+        "elm": round(c["dhan"]["exposure"]) if c.get("dhan") and c["dhan"].get("exposure") is not None else round(c["elm"]),
         "charges_entry_exit": round(c["charges"]), "max_profit": round(c["maxp"]), "max_profit_at": c["maxp_at"],
         "net_max_profit": round(c["net_maxp"]), "max_loss": ml, "defined_risk": c["defined"],
-        "breakevens": [round(b, 2) for b in c["bes"]], "net_roi_pct": round(c["roi_max"] * 100, 1),
+        "breakevens": [round(b, 2) for b in c["bes"]],
+        "net_roi_pct": round(c["net_maxp"] / (c["dhan"]["total"] if c.get("dhan") else c["capital"]) * 100, 1),
         "p_profit_pct": round(c["p_profit_iv"] * 100, 1), "expected_net_pnl": round(c["ev_net"]),
         "score": round(c["score"], 3), "flags": flags,
     }
 
 
-def find(RK, events):
+def select(RK):
+    """Candidates passing the alert rules, best score first, one per stock (before any broker margin check)."""
     pool = [c for c in RK["_eligible"]
             if (c["defined"] or not config.ALERT_DEFINED_ONLY)
             and c["score"] >= config.ALERT_MIN_SCORE and c["p_profit_iv"] >= config.ALERT_MIN_PPROFIT
@@ -48,7 +55,19 @@ def find(RK, events):
     for c in sorted(pool, key=lambda x: -x["score"]):
         if c["sym"] in seen:
             continue
-        seen.add(c["sym"]); out.append(summarize(c, events))
+        seen.add(c["sym"]); out.append(c)
+        if len(out) == config.ALERT_TOP_N * 2:   # spare candidates in case a broker check rules some out
+            break
+    return out
+
+
+def finalize(cands, events):
+    """Drop setups whose verified broker margin exceeds the capital limit; summarise the rest."""
+    out = []
+    for c in cands:
+        if c.get("dhan") and c["dhan"].get("total") and c["dhan"]["total"] > config.ALERT_MAX_CAPITAL:
+            continue
+        out.append(summarize(c, events))
         if len(out) == config.ALERT_TOP_N:
             break
     return out
@@ -94,7 +113,7 @@ def notify(new, scan_time):
             lines.append(
                 f"\n<b>{a['symbol']} {a['type']} {a['ratio']}</b> (spot {a['spot']:,.2f}, quotes {a['quote_time'][-8:]})\n"
                 + "\n".join(a["legs"])
-                + f"\n{a['debit_or_credit'].title()} ₹{abs(a['net_premium']):,.0f} · capital ₹{a['capital_required']:,} (est.)"
+                + f"\n{a['debit_or_credit'].title()} ₹{abs(a['net_premium']):,.0f} · margin ₹{a['capital_required']:,} ({'Dhan' if a['margin_source'].startswith('Dhan') else 'est.'})"
                 + f"\nMax profit ₹{a['net_max_profit']:,} net · max loss {a['max_loss']}"
                 + f"\nBE {', '.join(f'{b:g}' for b in a['breakevens'])} · P(profit) {a['p_profit_pct']}% · ROI {a['net_roi_pct']}%"
                 + (f"\n⚠ {'; '.join(a['flags'])}" if a["flags"] else ""))

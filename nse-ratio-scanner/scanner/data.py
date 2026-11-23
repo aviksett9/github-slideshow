@@ -147,11 +147,12 @@ def update_hv(cli, today, fno, days=64):
             jdump({}, "bhav", key + ".json")   # holiday / not published: remember it
         have += 1
     files = sorted(f for f in os.listdir(path("bhav", "x")[:-1]) if f.endswith(".json"))[-days:]
-    series = {}
+    series, last_close = {}, {}
     for f in files:
         for s, (c, p) in (jload("bhav", f) or {}).items():
             if c and p:
                 series.setdefault(s, []).append(math.log(c / p))
+                last_close[s] = c          # files are in date order, so this ends as the previous close
     hv = {}
     for s, lr in series.items():
         if len(lr) < 22:
@@ -159,7 +160,7 @@ def update_hv(cli, today, fno, days=64):
         def sd(x):
             m = sum(x) / len(x)
             return math.sqrt(sum((v - m) ** 2 for v in x) / (len(x) - 1)) * math.sqrt(252)
-        hv[s] = {"hv20": sd(lr[-20:]), "hv60": sd(lr[-60:]), "n": len(lr)}
+        hv[s] = {"hv20": sd(lr[-20:]), "hv60": sd(lr[-60:]), "n": len(lr), "prev_close": last_close.get(s)}
     jdump(hv, "hv.json")
     log.info("realised vol for %d symbols from %d bhavcopy days", len(hv), len(files))
 

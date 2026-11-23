@@ -90,8 +90,10 @@ def mini(c):
     pd = f"Dr {inr(prem)}" if prem > 0 else f"Cr {inr(-prem)}"
     legs = " / ".join(f'{"+" if l["lots"]>0 else "−"}{abs(l["lots"])}×{k(l["K"])}' for l in c["legs"])
     ml = "Unlimited" if c["unlimited"] else inr(c["maxl"])
+    cap = (f"Dhan margin <b>{inr(c['dhan']['total'])}</b> (est. {inr(c['capital'])})" if c.get("dhan")
+           else f"margin {inr(c['capital'])} est.")
     return f"""<li><b>{esc(c['sym'])} {'CE' if c['cp']=='C' else 'PE'} {c['ratio']}</b> <span class="mono">{legs}</span>
-<span class="kv">{pd} · capital {inr(c['capital'])} · net max {inr(c['net_maxp'])} ({c['roi_max']*100:.0f}%) · max loss {ml} · P(profit) {c['p_profit_iv']*100:.0f}% · EV {inr(c['ev_net'])}</span> {flags(c)}</li>"""
+<span class="kv">{pd} · {cap} · net max {inr(c['net_maxp'])} · max loss {ml} · P(profit) {c['p_profit_iv']*100:.0f}% · EV {inr(c['ev_net'])}</span> {flags(c)}</li>"""
 
 
 def payoff_svg(dd, c):
@@ -158,7 +160,8 @@ def deep(key, d, rank):
 <dl class="facts"><dt>Spot / implied forward</dt><dd>{dd['S']:,.2f} / {dd['F']:,.2f}</dd><dt>Net premium</dt><dd>{'Dr' if mg['prem']>0 else 'Cr'} {inr(abs(mg['prem']))}</dd>
 <dt>SPAN scan risk (16 NSE scenarios)</dt><dd>{inr(mg['scan'])}</dd><dt>Net option value</dt><dd>{inr(mg['nov'])}</dd>
 <dt>SPAN after option value</dt><dd>{inr(mg['span_req'])}</dd><dt>Exposure margin (ELM)</dt><dd>{inr(mg['elm'])}</dd>
-<dt>Total capital required</dt><dd><b>{inr(mg['capital'])}</b></dd><dt>Peak funding (buy legs first)</dt><dd>{inr(mg['peak'])}</dd>
+<dt>Margin blocked, NSE estimate</dt><dd><b>{inr(mg['capital'])}</b></dd>
+<dt>Dhan basket margin</dt><dd>{(f"<b>{inr(c['dhan']['total'])}</b> (SPAN {inr(c['dhan'].get('span'))}, exposure {inr(c['dhan'].get('exposure'))}; {c['dhan']['checked_at'][11:16]} IST)") if c.get('dhan') else ('not checked' + (': ' + esc(c['dhan_error']) if c.get('dhan_error') else ' (no Dhan token)'))}</dd>
 <dt>Breakevens</dt><dd>{', '.join(k(round(b,1)) for b in st['bes'])}</dd><dt>Max profit (gross)</dt><dd>{inr(gross)} at {k(st['maxp_at'])}</dd><dt>Max loss</dt><dd>{ml}</dd>
 <dt>P(profit) market / realised-vol</dt><dd>{c['p_profit_iv']*100:.0f}% / {c['p_profit_rw']*100:.0f}%</dd></dl></div>
 <h4>Option legs <small>scan snapshot {esc(dd['fetch'])} IST{(' · re-verified ' + esc(dd['verify_time'])) if dd.get('verify_time') else ''}</small></h4>
@@ -187,6 +190,8 @@ def render(RK, DT, meta):
         n_univ=m["n_universe"], n_scanned=len(RK["scanned"]), n_skipped=len(RK["skipped"]),
         n_cand=f'{RK["n_candidates"]:,}', n_elig=f'{RK["n_eligible"]:,}', fetch_lo=m["fetch_lo"], fetch_hi=m["fetch_hi"],
         span_created=m["span_created"], hv_cov=m["hv_cov"], verify_time=m.get("verify_time", "–"),
+        dhan_note=("Shortlists and the top 3 show Dhan's live basket margin (read-only calculator)." if m.get("dhan")
+                   else "Set DHAN_ACCESS_TOKEN to have shortlisted setups verified by Dhan's read-only margin calculator."),
         skipped=sk,
         t1a=table(T["C_defined"], "Table 1A · Call ratio structures, defined risk", "Longs ≥ shorts, so loss is capped on both sides. Ranked by composite score."),
         t1b=table(T["C_undefined"], "Table 1B · Call ratio structures, unlimited upside risk", "Ranked separately. Net short calls above the top strike: loss grows without limit on a rally."),

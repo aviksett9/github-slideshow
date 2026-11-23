@@ -75,6 +75,7 @@ td.num { text-align: right; font-family: "JetBrains Mono", monospace; font-size:
 <tr><td>Cash-market VaR + ELM rate (for delivery margin)</td><td>NSE Clearing <code>C_VAR1_DDMMYYYY_N.DAT</code></td><td>Daily</td><td><span class="tag off">official</span></td></tr>
 <tr><td>Realised volatility (HV20, HV60)</td><td><code>equity_eod_bhavcopy</code>, last ~64 trading days</td><td>Daily, incremental</td><td><span class="tag off">official</span></td></tr>
 <tr><td>Broker charges</td><td>Dhan tariff, read from dhan.co/pricing on 23-Nov-2026</td><td>Hard-coded</td><td><span class="tag est">update if changed</span></td></tr>
+<tr><td>Broker margin (optional)</td><td>Dhan <code>/v2/margincalculator/multi</code>, read-only, with a token in <code>.env</code></td><td>Every cycle, shortlisted setups</td><td><span class="tag live">live</span></td></tr>
 </table>
 <p>Realised volatility is the only input built from end-of-day data, because it measures how much the stock actually moved over past days. Every price, breakeven, P&amp;L and margin figure uses the live chain snapshot from the same cycle.</p>
 
@@ -123,11 +124,12 @@ IV per strike: Black-76 on F, solved from the mid price; smile = out-of-the-mone
 <div class="formula">Scan risk      = max(0, max_s Σ q_i · RA_i,s)
 Option value   NOV = Σ q_i · p_i          (SPAN-file option prices)
 SPAN required  = max(0, Scan risk − NOV)
-ELM            = Σ over short legs |q_i| · Spot · ELM rate   (3.5% normal, 5.25% deep OTM, + any additional ELM)
-Total capital  = max(SPAN required + ELM + Net premium,  ELM + max(Net premium, 0))
-Peak funding   = Long premium paid + SPAN required + ELM   (buy legs first, before short premium is credited)</div>
+ELM            = Σ over short legs |q_i| · Previous close · ELM rate   (3.5% normal, 5.25% deep OTM, + additional ELM)
+Margin blocked = SPAN required + ELM + premium of the buy legs   (short-leg premium is not netted off)</div>
 <p>Short-option minimum charge is zero in the current NSE file, and calendar-spread charges do not apply to single-expiry positions. Physical-settlement margin is estimated as 10%, 25%, 45% and 70% of the NSE cash VaR+ELM rate on the net in-the-money delivery value from E-4 to E-1, with full delivery value due at expiry.</p>
-<div class="note"><b>Unverified against your broker.</b> These figures follow NSE's published files, but Dhan's live basket margin was not available to the scanner. A low debit never implies low capital: on 23-Nov-2026 an SBIN 1:2 call ratio cost a ₹1,200 debit but needed about ₹1.29 lakh of capital. Check every position in your broker's basket before trading.</div>
+<h3>Checked against Dhan's basket margin calculator</h3>
+<p>On 23-Nov-2026, 26 structures were re-priced with Dhan's read-only <code>/v2/margincalculator/multi</code> (positions and open orders excluded). The checks fixed two rules in the formula above. Exposure margin is charged on the previous close, not live spot. The buy legs' premium is blocked in full; for RELIANCE PE 2:3:1, Dhan's ₹1,35,454 = SPAN ₹310 + exposure ₹72,319 + buy premium ₹62,825. With both rules, a full cycle at 12:33 IST matched Dhan within 0–1.6% on all 18 shortlisted structures, hedged and uncapped alike. The exception was a naked short call (SBIN), where Dhan charged about 40% more SPAN than NSE's arrays imply. So when a Dhan token is configured, the service re-prices every alerted and shortlisted setup with Dhan's calculator and reports that figure.</p>
+<div class="note"><b>A low debit never means low capital.</b> An SBIN 1:2 call ratio cost a ₹1,200 debit but Dhan blocked ₹1.65 lakh. The Dhan module can call only the two margin-calculator endpoints and the fund-limit endpoint (to read the client ID). No order-placing code exists in the scanner. Dhan marks its figures as indicative for the current session.</div>
 
 <h2><span class="n">10</span>Charges (Dhan, F&amp;O options)</h2>
 <table>
@@ -194,7 +196,7 @@ Peak funding   = Long premium paid + SPAN required + ELM   (buy legs first, befo
 <li>Stock options settle physically. Positions should be closed before E-4; holding into expiry needs cash or shares for delivery.</li>
 <li>Quotes come from one snapshot per stock, taken over about five minutes. Each stock's legs share one timestamp, but different stocks may differ by a few minutes.</li>
 <li>NseKit-MCP reads NSE's public website. Site changes or IP blocking cause fetch failures, which are reported per stock rather than filled in.</li>
-<li>Dhan charges are hard-coded and must be updated if the tariff changes. Margin is unverified against the broker.</li>
+<li>Dhan charges are hard-coded and must be updated if the tariff changes. Without a Dhan token, margin is an NSE-file estimate; with one, only shortlisted setups are verified, and Dhan's figures are indicative for the session.</li>
 </ul>
 
 <h2><span class="n">16</span>Running it on your laptop</h2>
