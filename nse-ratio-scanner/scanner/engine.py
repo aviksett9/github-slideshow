@@ -44,15 +44,24 @@ DELIV_STAMP = 0.015 / 100  # equity delivery stamp duty (buy)
 DELIV_TXN = 0.0030699 / 100
 
 
-def charges(buy_turn, sell_turn, orders):
-    brk = BROKERAGE * orders
+def charges_breakdown(buy_turn, sell_turn, orders, expired=0):
+    """Itemised Dhan + statutory charges for one batch of option orders (premium turnover in Rs).
+    `expired`: contracts left to expire/exercise, which Dhan also charges Rs20 brokerage on."""
+    brk = BROKERAGE * (orders + expired)
     txn = TXN * (buy_turn + sell_turn)
     sebi = SEBI * (buy_turn + sell_turn)
     ipft = IPFT * (buy_turn + sell_turn)
     stt = round(STT_SELL * sell_turn)
     stamp = round(STAMP * buy_turn)
     gst = GST * (brk + txn + sebi + ipft)
-    return brk + txn + sebi + ipft + stt + stamp + gst
+    items = {"brokerage": brk, "exchange": txn, "stt": stt, "stamp": stamp, "sebi": sebi, "ipft": ipft, "gst": gst}
+    items = {k: round(v, 2) for k, v in items.items()}
+    items["total"] = round(sum(items.values()), 2)
+    return items
+
+
+def charges(buy_turn, sell_turn, orders):
+    return charges_breakdown(buy_turn, sell_turn, orders)["total"]
 
 
 # ---------------- maths ----------------
@@ -383,7 +392,7 @@ def scan_symbol(sym, lot, span_opts, elm, hv, now):
             liq = min(legs[idx[m, p]]["oi"] for p in range(nlegs))
             worst_spr = max(legs[idx[m, p]]["spr"] for p in range(nlegs))
             out.append({
-                "sym": sym, "cp": cp, "spot": S, "fetch": fetch, "lot": lot, "T": T,
+                "sym": sym, "cp": cp, "spot": S, "fetch": fetch, "lot": lot, "T": T, "expiry": EXPIRY_LABEL,
                 "ratio": ":".join(str(int(abs(q[m, p]))) for p in range(nlegs)),
                 "legs": [{"K": float(Ks[idx[m, p]]), "lots": int(q[m, p]), "px": float(px[m, p]),
                           "bid": legs[idx[m, p]]["bid"], "ask": legs[idx[m, p]]["ask"], "ltp": legs[idx[m, p]]["ltp"],

@@ -40,6 +40,21 @@ The cycle takes about 7 minutes in total. Once a day it also refreshes the F&O l
 the ELM and VaR files, and realised volatility. Volatility comes from the last ~64 `equity_eod_bhavcopy` files, the one
 input that is end-of-day by definition.
 
+## What each setup includes
+
+Every setup names its contracts in full: action, lots, quantity, symbol, expiry, strike, CE/PE and price, for example
+`BUY 2 lots (1,000 qty) RELIANCE 29-Dec-2026 1390 PE @ ₹55.75`. `leg_detail` gives the same as structured fields.
+
+Each setup also carries a `cashflow` statement (+ inflow, − outflow):
+
+* **Entry.** Each leg's cash (buy at ask = pay, sell at bid = receive), net premium, and itemised charges (brokerage,
+  exchange, STT, stamp, SEBI, IPFT, GST).
+* **Funds blocked.** Dhan's figure when a token is set, otherwise the NSE estimate. It already includes the buy
+  premium and is released on exit.
+* **Exit scenarios.** Stock unchanged, best case (max profit), each breakeven (before charges), and worst case (or a
+  3σ rally for uncapped calls). Each shows cash received, cash paid and charges on exit, plus total P&L after all
+  charges.
+
 ## Expiry
 
 `TARGET_EXPIRY=auto` (the default) scans the first monthly expiry at least `MIN_DTE` days away (default 7). Today's

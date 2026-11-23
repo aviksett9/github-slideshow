@@ -1,6 +1,8 @@
 """Render a ranked scan + deep dives into a standalone HTML report."""
 import os, html
 
+from .costing import cashflow, contract
+
 esc = html.escape
 META = {}
 
@@ -8,21 +10,19 @@ META = {}
 def inr(x, dec=0):
     if x is None:
         return "–"
+    """Indian digit grouping (₹1,23,456 or ₹1,23,456.78)."""
     neg = x < 0
-    x = abs(x)
-    s = f"{x:,.{dec}f}" if dec else f"{round(x):d}"
-    if dec == 0:
-        n = s
-        if len(n) > 3:
-            head, tail = n[:-3], n[-3:]
-            parts = []
-            while len(head) > 2:
-                parts.insert(0, head[-2:]); head = head[:-2]
-            if head:
-                parts.insert(0, head)
-            n = ",".join(parts + [tail])
-        s = n
-    return ("−" if neg else "") + "₹" + s
+    s = f"{abs(x):.{dec}f}"
+    n, _, frac = s.partition(".")
+    if len(n) > 3:
+        head, tail = n[:-3], n[-3:]
+        parts = []
+        while len(head) > 2:
+            parts.insert(0, head[-2:]); head = head[:-2]
+        if head:
+            parts.insert(0, head)
+        n = ",".join(parts + [tail])
+    return ("−" if neg else "") + "₹" + n + ("." + frac if frac else "")
 
 
 def k(x):
@@ -66,7 +66,7 @@ def row(c, i):
     pd = f'<span class="dr">Dr {inr(prem)}</span>' if prem > 0 else f'<span class="cr">Cr {inr(-prem)}</span>'
     bes = ", ".join(k(round(b, 1)) for b in c["bes"])
     dsig = f'<small>{c["dang_sig"]:.1f}σ</small>' if c.get("dang_sig") else ""
-    return f"""<tr><td class="n">{i}</td><td><b>{esc(c['sym'])}</b><small>lot {c['lot']}</small></td>
+    return f"""<tr><td class="n">{i}</td><td><b>{esc(c['sym'])}</b><small>exp {esc(c.get('expiry') or '')} · lot {c['lot']}</small></td>
 <td class="num">{c['spot']:,.2f}</td><td>{c['ratio']}</td><td class="legs">{legs_txt(c,'buy')}</td><td class="legs">{legs_txt(c,'sell')}</td>
 <td class="num">{pd}</td><td class="num">{inr(c['capital'])}<small>SPAN {inr(c['span_req'])} · ELM {inr(c['elm'])}</small></td>
 <td class="num">{inr(c['charges'])}</td><td class="num">{inr(c['maxp'])}<small>at {k(c['maxp_at'])}</small></td><td class="num">{maxloss_txt(c)}</td>
@@ -88,12 +88,40 @@ def table(rows, caption, note):
 def mini(c):
     prem = c["prem"]
     pd = f"Dr {inr(prem)}" if prem > 0 else f"Cr {inr(-prem)}"
-    legs = " / ".join(f'{"+" if l["lots"]>0 else "−"}{abs(l["lots"])}×{k(l["K"])}' for l in c["legs"])
+    legs = " · ".join(f'{"BUY" if l["lots"]>0 else "SELL"} {abs(l["lots"])}× {k(l["K"])} {"CE" if c["cp"]=="C" else "PE"} @{l["px"]:.2f}' for l in c["legs"]) + f' · exp {c.get("expiry", "")}'
     ml = "Unlimited" if c["unlimited"] else inr(c["maxl"])
     cap = (f"Dhan margin <b>{inr(c['dhan']['total'])}</b> (est. {inr(c['capital'])})" if c.get("dhan")
            else f"margin {inr(c['capital'])} est.")
+    cf = cashflow(c)
+    e = cf["entry"]
+    best = next((x for x in cf["exits"] if x["label"].startswith("Best")), None)
+    worst = next((x for x in cf["exits"] if x["label"].startswith(("Worst", "Rally"))), None)
+    cash = (f"Entry: pay {inr(-e['premium_out'])} · receive {inr(e['premium_in'])} · charges {inr(e['charges']['total'], 2)} → "
+            f"net {'in' if e['net_entry_cash'] > 0 else 'out'} {inr(abs(e['net_entry_cash']))}"
+            + (f" · best exit {inr(best['net_pnl'])}" if best else "") + (f" · worst {inr(worst['net_pnl'])}" if worst else ""))
     return f"""<li><b>{esc(c['sym'])} {'CE' if c['cp']=='C' else 'PE'} {c['ratio']}</b> <span class="mono">{legs}</span>
-<span class="kv">{pd} · {cap} · net max {inr(c['net_maxp'])} · max loss {ml} · P(profit) {c['p_profit_iv']*100:.0f}% · EV {inr(c['ev_net'])}</span> {flags(c)}</li>"""
+<span class="kv">{pd} · {cap} · net max {inr(c['net_maxp'])} · max loss {ml} · P(profit) {c['p_profit_iv']*100:.0f}% · EV {inr(c['ev_net'])}</span>
+<span class="kv">{cash}</span> {flags(c)}</li>"""
+
+
+def cash_table(c):
+    cf = cashflow(c)
+    e = cf["entry"]
+    fl = lambda v: f'<td class="num {"pos" if v > 0 else "neg" if v < 0 else ""}">{"+" if v > 0 else ""}{inr(v, 2) if v else "–"}</td>'
+    rows = "".join(f"<tr><td>{l['action']} {l['lots']} lot{'s' if l['lots'] > 1 else ''}</td><td>{l['contract']}</td><td class='num'>{l['qty']:,}</td>"
+                   f"<td class='num'>{l['price']:.2f} ({l['price_basis']})</td>{fl(l['flow'])}</tr>" for l in e["legs"])
+    chg = e["charges"]
+    rows += (f"<tr><td colspan='4'>Entry charges: brokerage {inr(chg['brokerage'],2)}, exchange {inr(chg['exchange'],2)}, STT {inr(chg['stt'])}, "
+             f"stamp {inr(chg['stamp'])}, SEBI {inr(chg['sebi'],2)}, GST {inr(chg['gst'],2)}</td>{fl(-chg['total'])}</tr>")
+    rows += f"<tr><td colspan='4'><b>Net entry cash</b></td>{fl(e['net_entry_cash'])}</tr>"
+    mb = cf["margin_blocked"]
+    ex = "".join(f"<tr><td>{esc(x['label'])}</td><td class='num'>{x['spot']:,.2f}</td>{fl(x['premium_in'])}{fl(x['premium_out'])}"
+                 f"{fl(-x['charges']['total'])}{fl(x['net_exit_cash'])}<td class='num'><b>{'+' if x['net_pnl'] > 0 else ''}{inr(x['net_pnl'])}</b></td></tr>"
+                 for x in cf["exits"])
+    return f"""<h4>Cash flow per set <small>+ inflow, − outflow · exits square off just before expiry at intrinsic value</small></h4>
+<div class="scroll"><table class="compact"><tr><th>Entry</th><th>Contract</th><th>Qty</th><th>Price</th><th>Cash</th></tr>{rows}</table></div>
+<p class="note">Funds blocked while open: <b>{inr(mb['amount'])}</b> ({esc(mb['source'])}), which includes the premium paid on buy legs and is released on exit. Funds needed in the account: about {inr(cf['funds_needed'])}.</p>
+<div class="scroll"><table class="compact"><tr><th>Exit scenario</th><th>Spot</th><th>Receive</th><th>Pay</th><th>Charges</th><th>Net exit cash</th><th>Total P&amp;L</th></tr>{ex}</table></div>"""
 
 
 def payoff_svg(dd, c):
@@ -125,7 +153,7 @@ def deep(key, d, rank):
     c, dd = d["cand"], d["dd"]
     mg, st = dd["margin"], dd["stats"]
     legq = "".join(
-        f"<tr><td>{'BUY' if q['lots']>0 else 'SELL'} {abs(q['lots'])} lot{'s' if abs(q['lots'])>1 else ''}</td><td>{k(q['K'])} {'CE' if c['cp']=='C' else 'PE'}</td>"
+        f"<tr><td>{'BUY' if q['lots']>0 else 'SELL'} {abs(q['lots'])} lot{'s' if abs(q['lots'])>1 else ''}</td><td>{esc(contract(c, q['K']))}</td>"
         f"<td class='num'>{q['bid']:.2f} / {q['ask']:.2f}</td><td class='num'>{q['ltp']:.2f}</td><td class='num'><b>{q['px']:.2f}</b></td>"
         f"<td class='num'>{q['oi']:,.0f}</td><td class='num'>{q['vol']:,.0f}</td><td class='num'>{q['iv_model']*100:.1f}%</td><td class='num'>{(q['nse_iv'] or 0):.1f}%</td>"
         + (f"<td class='num'>{q['v_bid']:.2f} / {q['v_ask']:.2f}</td>" if q.get('v_bid') is not None else "<td>–</td>") + "</tr>"
@@ -155,7 +183,7 @@ def deep(key, d, rank):
     gross = st["maxp"]
     ml = "Unlimited" if st["unlimited"] else inr(st["maxl"]) + ("" if c["defined"] else " if stock → ₹0")
     return f"""<article class="deep"><header><span class="rank">{rank}</span><div><h3>{esc(c['sym'])} {'Call' if c['cp']=='C' else 'Put'} ratio {c['ratio']}</h3>
-<p class="mono">{' · '.join(f"{'BUY' if l['lots']>0 else 'SELL'} {abs(l['lots'])}×{k(l['K'])}{'CE' if c['cp']=='C' else 'PE'}" for l in c['legs'])} · lot {c['lot']} · expiry 29-Dec-2026</p></div></header>
+<p class="mono">{' · '.join(f"{'BUY' if l['lots']>0 else 'SELL'} {abs(l['lots'])}×{k(l['K'])}{'CE' if c['cp']=='C' else 'PE'}" for l in c['legs'])} · lot {c['lot']} · expiry {esc(c.get('expiry') or '')}</p></div></header>
 <div class="grid2"><div>{payoff_svg(dd, c)}</div>
 <dl class="facts"><dt>Spot / implied forward</dt><dd>{dd['S']:,.2f} / {dd['F']:,.2f}</dd><dt>Net premium</dt><dd>{'Dr' if mg['prem']>0 else 'Cr'} {inr(abs(mg['prem']))}</dd>
 <dt>SPAN scan risk (16 NSE scenarios)</dt><dd>{inr(mg['scan'])}</dd><dt>Net option value</dt><dd>{inr(mg['nov'])}</dd>
@@ -166,6 +194,7 @@ def deep(key, d, rank):
 <dt>P(profit) market / realised-vol</dt><dd>{c['p_profit_iv']*100:.0f}% / {c['p_profit_rw']*100:.0f}%</dd></dl></div>
 <h4>Option legs <small>scan snapshot {esc(dd['fetch'])} IST{(' · re-verified ' + esc(dd['verify_time'])) if dd.get('verify_time') else ''}</small></h4>
 <div class="scroll"><table class="compact"><tr><th>Action</th><th>Contract</th><th>Bid / Ask</th><th>LTP</th><th>Price used</th><th>OI (contracts)</th><th>Volume</th><th>IV (Black-76)</th><th>IV (NSE)</th><th>Re-verified bid / ask</th></tr>{legq}</table></div>
+{cash_table(c)}
 <h4>Costs (Dhan + statutory)</h4>
 <table class="compact"><tr><th>Path</th><th>Charges</th><th>Net max profit</th></tr>
 <tr><td>Entry + normal exit (square off near expiry at {k(st['maxp_at'])})</td><td class="num">{inr(costs['entry_exit'])}</td><td class="num">{inr(gross-costs['entry_exit'])}</td></tr>

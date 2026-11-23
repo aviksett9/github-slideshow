@@ -3,6 +3,7 @@ import datetime, json, logging, urllib.request
 
 from . import config
 from .data import jdump, jload, path
+from .costing import cashflow, contract
 
 log = logging.getLogger("alerts")
 
@@ -13,7 +14,11 @@ def _key(c):
 
 def summarize(c, events):
     side = "CE" if c["cp"] == "C" else "PE"
-    legs = [f'{"BUY" if l["lots"] > 0 else "SELL"} {abs(l["lots"])}x{l["K"]:g} {side} @{l["px"]:.2f}' for l in c["legs"]]
+    legs = [f'{"BUY" if l["lots"] > 0 else "SELL"} {abs(l["lots"])} lot{"s" if abs(l["lots"]) > 1 else ""} '
+            f'({abs(l["lots"]) * c["lot"]:,} qty) {contract(c, l["K"])} @ ₹{l["px"]:.2f}' for l in c["legs"]]
+    leg_detail = [{"action": "BUY" if l["lots"] > 0 else "SELL", "symbol": c["sym"], "expiry": c.get("expiry"),
+                   "strike": l["K"], "option_type": side, "lots": abs(l["lots"]), "qty": abs(l["lots"]) * c["lot"],
+                   "price": l["px"], "price_basis": "ask" if l["lots"] > 0 else "bid"} for l in c["legs"]]
     if c["unlimited"]:
         ml = "Unlimited"
     elif not c["defined"]:
@@ -26,7 +31,8 @@ def summarize(c, events):
     if c.get("carry_dev") is not None and abs(c["carry_dev"]) > 0.01:
         flags.append(f'forward {c["carry_dev"]*100:+.1f}% vs carry (dividend/event?)')
     return {
-        "key": _key(c), "symbol": c["sym"], "type": side, "ratio": c["ratio"], "legs": legs, "lot": c["lot"],
+        "key": _key(c), "symbol": c["sym"], "expiry": c.get("expiry"), "type": side, "ratio": c["ratio"],
+        "legs": legs, "leg_detail": leg_detail, "lot": c["lot"],
         "spot": c["spot"], "quote_time": c["fetch"], "net_premium": round(c["prem"], 2),
         "debit_or_credit": "debit" if c["prem"] > 0 else "credit",
         "capital_required": round(c["dhan"]["total"]) if c.get("dhan") else round(c["capital"]),
@@ -41,6 +47,7 @@ def summarize(c, events):
         "net_roi_pct": round(c["net_maxp"] / (c["dhan"]["total"] if c.get("dhan") else c["capital"]) * 100, 1),
         "p_profit_pct": round(c["p_profit_iv"] * 100, 1), "expected_net_pnl": round(c["ev_net"]),
         "score": round(c["score"], 3), "flags": flags,
+        "cashflow": cashflow(c),
     }
 
 
@@ -97,6 +104,27 @@ def _post(url, payload):
         return r.status
 
 
+def _r(x):
+    from .report import inr
+    return inr(abs(x))
+
+
+_SHORT = (("Stock unchanged", "If unchanged"), ("Best", "Best case"), ("Worst", "Worst case"), ("Rally", "3σ rally"))
+
+
+def _cash_lines(cf):
+    e = cf["entry"]
+    out = (f"\n<i>Entry</i>: pay {_r(e['premium_out'])} · receive {_r(e['premium_in'])} · charges {_r(e['charges']['total'])}"
+           f" → net {'in' if e['net_entry_cash'] > 0 else 'out'} {_r(e['net_entry_cash'])}"
+           f"\n<i>Blocked</i>: {_r(cf['margin_blocked']['amount'])} ({'Dhan' if cf['margin_blocked']['source'].startswith('Dhan') else 'est.'}), released on exit")
+    for x in cf["exits"]:
+        name = next((short for pre, short in _SHORT if x["label"].startswith(pre)), None)
+        if name:
+            out += (f"\n<i>{name}</i> @{x['spot']:,.0f}: receive {_r(x['premium_in'])} · pay {_r(x['premium_out'] - x['charges']['total'])}"
+                    f" → P&amp;L {'+' if x['net_pnl'] >= 0 else '−'}{_r(x['net_pnl'])}")
+    return out
+
+
 def notify(new, scan_time):
     for a in new:
         log.info("FOUND %s %s %s | %s | capital %s | max profit %s | max loss %s | P(profit) %s%%",
@@ -111,11 +139,12 @@ def notify(new, scan_time):
         lines = [f"<b>NSE ratio scan {scan_time[11:16]} IST: {len(new)} new setup(s)</b>"]
         for a in new:
             lines.append(
-                f"\n<b>{a['symbol']} {a['type']} {a['ratio']}</b> (spot {a['spot']:,.2f}, quotes {a['quote_time'][-8:]})\n"
+                f"\n<b>{a['symbol']} {a['type']} {a['ratio']} · expiry {a['expiry']}</b>\n(spot {a['spot']:,.2f}, quotes {a['quote_time'][-8:]} IST)\n"
                 + "\n".join(a["legs"])
                 + f"\n{a['debit_or_credit'].title()} ₹{abs(a['net_premium']):,.0f} · margin ₹{a['capital_required']:,} ({'Dhan' if a['margin_source'].startswith('Dhan') else 'est.'})"
                 + f"\nMax profit ₹{a['net_max_profit']:,} net · max loss {a['max_loss']}"
                 + f"\nBE {', '.join(f'{b:g}' for b in a['breakevens'])} · P(profit) {a['p_profit_pct']}% · ROI {a['net_roi_pct']}%"
+                + _cash_lines(a["cashflow"])
                 + (f"\n⚠ {'; '.join(a['flags'])}" if a["flags"] else ""))
         lines.append("\nAnalysis only. Verify margin in your broker basket before trading.")
         try:

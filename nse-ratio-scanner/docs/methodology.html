@@ -143,6 +143,8 @@ Margin blocked = SPAN required + ELM + premium of the buy legs   (short-leg prem
 <tr><td>GST</td><td class="num">18%</td><td>Brokerage + transaction + SEBI + IPFT</td></tr>
 <tr><td>Physical delivery</td><td class="num">0.10% + 0.1% STT</td><td>Contract value of delivered shares, plus delivery stamp and exchange charges</td></tr>
 </table>
+<h3>Cash flow per set</h3>
+<p>Every reported setup carries a cash-flow statement, with + for inflow and − for outflow. At entry it lists each leg's cash (pay the ask on buys, receive the bid on sells), the net premium and itemised charges. It shows the funds blocked (Dhan's figure when available), which already include the buy premium and are released on exit. It then shows five exit scenarios: stock unchanged, best case at the max-profit strike, each breakeven (before charges), and worst case, or a 3σ rally for uncapped calls. Each scenario lists cash received, cash paid and charges on the square-off, and total P&amp;L after all charges. Contracts are always named in full, for example <code>BUY 2 lots (1,000 qty) RELIANCE 29-Dec-2026 1390 PE @ ₹55.75</code>.</p>
 <p>Three cost paths are reported for the top setups: entry plus normal exit (square off near expiry at the max-profit price, worthless legs left to expire), entry plus one adjustment plus exit, and holding through expiry with physical settlement. Gross profit, charges and net profit are shown separately.</p>
 
 <h2><span class="n">11</span>Probability, expected value and stress</h2>
