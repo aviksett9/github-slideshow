@@ -1,0 +1,155 @@
+<title>{title}</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: single reading column; summary (shortlists, top 3) before the wide ranked tables, method last */
+:root {{
+  --bg: #f4f6f9; --surface: #ffffff; --ink: #142030; --muted: #586679; --line: #dbe1e8;
+  --accent: #1d5bb8; --accent-soft: #e6eefb;
+  --pos: #17773f; --neg: #b3261e; --warn: #9a5b00; --warn-soft: #fbf1e1; --crit-soft: #fbe7e5; --ok-soft: #e4f3ea;
+  --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}}
+@media (prefers-color-scheme: dark) {{ :root:not([data-theme="light"]) {{
+  --bg: #0e131a; --surface: #151c25; --ink: #e5eaf0; --muted: #93a1b3; --line: #273241;
+  --accent: #7aaeff; --accent-soft: #1b2a40;
+  --pos: #57c78f; --neg: #ff8074; --warn: #f0b660; --warn-soft: #33271a; --crit-soft: #3a1e1c; --ok-soft: #173226; color-scheme: dark; }} }}
+:root[data-theme="dark"] {{
+  --bg: #0e131a; --surface: #151c25; --ink: #e5eaf0; --muted: #93a1b3; --line: #273241;
+  --accent: #7aaeff; --accent-soft: #1b2a40;
+  --pos: #57c78f; --neg: #ff8074; --warn: #f0b660; --warn-soft: #33271a; --crit-soft: #3a1e1c; --ok-soft: #173226; color-scheme: dark; }}
+body {{ background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.55; }}
+.wrap {{ max-width: 1180px; margin: 0 auto; padding-block: 28px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 36px; }}
+h1, h2, h3, h4 {{ text-wrap: balance; margin: 0; line-height: 1.2; }}
+h1 {{ font-size: clamp(1.6rem, 3vw, 2.2rem); font-weight: 700; letter-spacing: -0.01em; }}
+h2 {{ font-size: 1.3rem; font-weight: 600; }}
+h3 {{ font-size: 1.05rem; font-weight: 600; }}
+h4 {{ font-size: .9rem; font-weight: 600; margin-top: 18px; }}
+h4 small, th small, td small {{ display: block; font-weight: 400; color: var(--muted); font-size: .78em; }}
+h4 small {{ display: inline; margin-left: 6px; }}
+p {{ margin: 0; max-width: 72ch; }}
+.eyebrow {{ font-size: .72rem; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); font-weight: 600; }}
+.mono, .num, td.legs {{ font-family: var(--f-mono); font-variant-numeric: tabular-nums; }}
+header.top {{ display: grid; gap: 10px; }}
+.meta {{ color: var(--muted); font-size: .9rem; }}
+.prov {{ display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: .82rem; color: var(--muted); }}
+.prov span::before {{ content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; vertical-align: 0; }}
+.prov .live::before {{ background: var(--pos); }} .prov .off::before {{ background: var(--accent); }}
+.prov .est::before {{ background: var(--warn); }} .prov .na::before {{ background: var(--neg); }}
+.stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }}
+.stats div {{ background: var(--surface); padding: 12px 14px; display: grid; gap: 2px; }}
+.stats b {{ font-family: var(--f-mono); font-size: 1.25rem; font-weight: 500; }}
+.stats span {{ font-size: .78rem; color: var(--muted); }}
+.alert {{ border: 1px solid var(--line); border-left: 3px solid var(--warn); background: var(--warn-soft); padding: 12px 14px; border-radius: 4px; display: grid; gap: 6px; font-size: .9rem; }}
+.lists {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr)); gap: 20px; }}
+.lists section {{ background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 16px 18px; display: grid; gap: 10px; min-width: 0; }}
+.lists ol {{ margin: 0; padding-left: 1.2em; display: grid; gap: 10px; }}
+.lists li {{ font-size: .88rem; }}
+.kv {{ display: block; color: var(--muted); font-size: .82rem; font-family: var(--f-mono); }}
+.chip {{ display: inline-block; font-family: var(--f-mono); font-size: .7rem; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }}
+.chip.warn {{ color: var(--warn); border-color: currentColor; background: var(--warn-soft); }}
+.deep {{ background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 18px 20px; display: grid; gap: 6px; min-width: 0; }}
+.deep header {{ display: flex; gap: 14px; align-items: flex-start; }}
+.rank {{ font-family: var(--f-mono); font-size: 1.4rem; color: var(--accent); line-height: 1; padding-top: 2px; }}
+.grid2 {{ display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 20px; align-items: start; margin-top: 8px; }}
+@media (max-width: 760px) {{ .grid2 {{ grid-template-columns: 1fr; }} }}
+.facts {{ display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; font-size: .84rem; }}
+.facts dt {{ color: var(--muted); }} .facts dd {{ margin: 0; font-family: var(--f-mono); text-align: right; }}
+svg.payoff {{ width: 100%; height: auto; display: block; }}
+svg .zero {{ stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }}
+svg .spot {{ stroke: var(--line); stroke-width: 1.5; }}
+svg polyline {{ fill: none; stroke-width: 2; }}
+svg .lexp {{ stroke: var(--accent); stroke-width: 2.5; }} svg .l7 {{ stroke: var(--warn); }} svg .l14 {{ stroke: var(--muted); stroke-dasharray: 5 3; }}
+svg .ax {{ fill: var(--muted); font-size: 11px; font-family: var(--f-mono); }}
+.legend {{ font-size: .75rem; color: var(--muted); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }}
+.legend .k {{ display: inline-block; width: 16px; height: 0; border-top: 2.5px solid; }}
+.legend .lexp {{ border-color: var(--accent); }} .legend .l7 {{ border-color: var(--warn); }} .legend .l14 {{ border-color: var(--muted); border-top-style: dashed; }}
+.scroll {{ overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }}
+table {{ border-collapse: collapse; width: 100%; font-size: .8rem; }}
+th {{ text-align: left; font-weight: 600; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--line); background: var(--surface); position: sticky; top: 0; vertical-align: bottom; }}
+td {{ padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }}
+tr:last-child td {{ border-bottom: 0; }}
+td.num {{ text-align: right; white-space: nowrap; }}
+td.legs {{ white-space: nowrap; font-size: .78rem; }}
+td.n {{ color: var(--muted); font-family: var(--f-mono); }}
+table.compact td, table.compact th {{ padding: 5px 8px; }}
+.deep .scroll {{ border-radius: 4px; }}
+.dr {{ color: var(--neg); }} .cr {{ color: var(--pos); }} .pos {{ color: var(--pos); }} .neg {{ color: var(--neg); }}
+.risk {{ font-weight: 600; padding: 1px 6px; border-radius: 3px; }}
+.risk.crit {{ color: var(--neg); background: var(--crit-soft); }} .risk.high {{ color: var(--warn); background: var(--warn-soft); }} .risk.ok {{ color: var(--pos); background: var(--ok-soft); }}
+.tbl {{ display: grid; gap: 8px; min-width: 0; }}
+.note {{ color: var(--muted); font-size: .84rem; }}
+ul.adj {{ margin: 0; padding-left: 1.1em; display: grid; gap: 10px; font-size: .84rem; }}
+.method {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 16px 28px; font-size: .86rem; }}
+.method div {{ display: grid; gap: 4px; }}
+.method h3 {{ font-size: .92rem; }}
+.skipped {{ columns: 2 280px; font-size: .84rem; margin: 0; padding-left: 1.1em; }}
+a {{ color: var(--accent); }}
+:focus-visible {{ outline: 2px solid var(--accent); outline-offset: 2px; }}
+</style>
+<div class="wrap">
+<header class="top">
+  <span class="eyebrow">NSE stock options · expiry {expiry}</span>
+  <h1>{title}</h1>
+  <p class="meta">Live option chains via NseKit-MCP, fetched {scan_date} {fetch_lo}–{fetch_hi} IST. Market status at scan: {mkt}. Margin from the NSE Clearing SPAN file created {span_created} IST and NSE exposure-margin and VaR files. Charges from Dhan's published tariff. Analysis only; no orders placed.</p>
+  <div class="prov"><span class="live">Live: MCP quotes with NSE timestamps</span><span class="off">Official file: NSE Clearing SPAN, ELM, VaR</span><span class="est">Estimate: final Dhan margin, probabilities, simulations</span><span class="na">Unavailable: Dhan live basket margin</span></div>
+</header>
+
+<div class="stats">
+  <div><b>{n_univ}</b><span>F&amp;O stocks in NSE list</span></div>
+  <div><b>{n_scanned}</b><span>scanned with valid candidates</span></div>
+  <div><b>{n_skipped}</b><span>skipped (reasons at the end)</span></div>
+  <div><b>{n_cand}</b><span>structures priced</span></div>
+  <div><b>{n_elig}</b><span>passed liquidity and risk filters</span></div>
+  <div><b>{hv_cov}</b><span>with realised volatility</span></div>
+</div>
+
+<div class="alert">
+  <b>Read before using any row</b>
+  <span>"Margin ₹" is total capital required: SPAN after option value, plus ELM, plus net debit. It is computed from NSE's own risk arrays, but Dhan's live basket margin could not be queried, so treat it as unverified until checked in Dhan's basket.</span>
+  <span>Stock options settle physically. Holding an in-the-money leg into expiry week brings delivery margins from E-4 and full delivery value at expiry. Plan every trade to be closed before {close_by}.</span>
+  <span>Unlimited and substantial-risk structures are ranked separately from capped ones and are not comparable on ROI.</span>
+</div>
+
+<section style="display:grid;gap:14px">
+  <h2>Shortlists</h2>
+  <div class="lists">
+    <section><h3>Best 5 low-debit setups</h3><p class="note">Lowest net debit among candidates with a top-30% score, P(profit) ≥ 35% and positive expected value.</p><ol>{l1}</ol></section>
+    <section><h3>Best 5 high-profit, capital-efficient setups</h3><p class="note">Highest net max profit per rupee of capital, same quality floor.</p><ol>{l2}</ol></section>
+    <section><h3>Best 5 fully hedged setups</h3><p class="note">Defined risk only, by composite score.</p><ol>{l3}</ol></section>
+    <section><h3>Best 3 overall, risk-adjusted</h3><p class="note">Expected net P&amp;L per rupee of worst plausible loss (max loss if capped, 3σ adverse move if not).</p><ol>{l4}</ol></section>
+  </div>
+</section>
+
+<section style="display:grid;gap:16px">
+  <h2>Top 3 in detail</h2>
+  <p class="note">Quotes for these legs were re-fetched from NseKit-MCP at {verify_time} IST to confirm they still trade near the scanned prices.</p>
+  {deeps}
+</section>
+
+<section style="display:grid;gap:22px">
+  <h2>Ranked tables</h2>
+  <p class="note">One row per stock (its best-scoring structure). Prices: buy at ask, sell at bid. Every leg has two-sided quotes, OI ≥ 50 contracts and spread ≤ 10% of mid. Capital ≤ ₹5 lakh. Unlimited and substantial-risk rows also need the dangerous breakeven at least 1σ away.</p>
+  {t1a}
+  {t1b}
+  {t2a}
+  {t2b}
+</section>
+
+<section style="display:grid;gap:14px">
+  <h2>Method and assumptions</h2>
+  <div class="method">
+    <div><h3>Universe and data</h3><p>All {n_univ} symbols from NseKit-MCP <span class="mono">list_of_fno_stocks</span>. One <span class="mono">fno_live_option_chain(symbol, "{expiry}")</span> call per stock every cycle (bid/ask, LTP, OI, volume, NSE IV, underlying value and fetch time in one snapshot). Lot sizes from <span class="mono">fno_lot_sizes</span> (DEC-26). Ban list from <span class="mono">fno_ban_list</span>. Realised volatility from the last ~60 daily <span class="mono">equity_eod_bhavcopy</span> files (close vs NSE previous close). Board meetings and corporate actions to 31-Dec.</p></div>
+    <div><h3>Structures</h3><p>Calls and puts scanned separately. Two-leg 1:2, 1:3, 1:4, 2:3, 2:5. Three-leg 1:2:1 (butterfly / broken wing), 1:3:2, 1:3:1, 2:3:1, 1:4:3, 1:4:2, 2:5:3. Long leg within −10% to +12% of spot, short leg to 30% OTM, wing to 40% OTM, any strike gaps. Whole lots only, at most 5 lots per leg.</p></div>
+    <div><h3>Margin</h3><p>SPAN = worst of NSE's 16 risk-array scenarios for the whole position, less net option value. ELM = NSE's applicable rate (normal 3.5%, deep OTM 5.25%, plus any additional ELM) on short-leg notional. Capital = SPAN + ELM + net debit. Peak funding assumes buy legs first and short premium not yet credited. Delivery margin uses NSE's cash VaR+ELM rate at 10/25/45/70% from E-4 to E-1.</p></div>
+    <div><h3>Charges (Dhan tariff as published 23-Nov-2026)</h3><p>₹20 per executed order (one order per leg; also on expired, exercised or assigned contracts). NSE transaction 0.0355299% of premium. STT 0.15% of sell premium and 0.15% of intrinsic value on exercise. SEBI 0.0001%, stamp 0.003% on buys, IPFT 0.0000001%, GST 18%. Physical delivery: 0.10% brokerage on contract value plus delivery STT 0.1%.</p></div>
+    <div><h3>Probabilities and expected value</h3><p>Forward from put-call parity on near-ATM strikes (NSE futures price from SPAN where quotes were too wide). Black-76 IVs per strike. P(profit) uses the market's own smile. Expected value uses a log-normal around the forward with σ = max(HV20, HV60), so it reflects realised volatility rather than the option prices themselves. Neither is a forecast.</p></div>
+    <div><h3>Scoring</h3><p>Percentile-ranked within each risk group. Defined risk: EV/capital 30%, P(profit) 20%, net max ROI 20%, max loss/capital 15%, liquidity 8%, charges/profit 7%. Unlimited/substantial: EV/capital 25%, breakeven distance in σ 20%, P(profit) 15%, net max ROI 15%, 2.5σ stress loss/capital 15%, liquidity 5%, charges 5%. Debit size never enters a safety score.</p></div>
+  </div>
+</section>
+
+<section style="display:grid;gap:10px">
+  <h2>Skipped stocks</h2>
+  <ul class="skipped">{skipped}</ul>
+</section>
+</div>

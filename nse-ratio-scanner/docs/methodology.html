@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>NSE Ratio-Spread Scanner: Methodology</title>
+<style>
+@page { size: A4; margin: 18mm 17mm 20mm 17mm; }
+:root { --ink:#16202c; --muted:#5a6676; --line:#d9dfe6; --accent:#1d5bb8; --soft:#eef3fb; --warn:#9a5b00; --warnsoft:#fbf2e3; }
+* { box-sizing: border-box; }
+body { font-family: "Inter", "DejaVu Sans", sans-serif; color: var(--ink); font-size: 9.6pt; line-height: 1.5; margin: 0; }
+h1 { font-size: 22pt; font-weight: 700; letter-spacing: -0.01em; margin: 0 0 4pt; }
+h2 { font-size: 13pt; font-weight: 650; margin: 18pt 0 6pt; padding-top: 6pt; border-top: 1px solid var(--line); break-after: avoid; }
+h2 .n { color: var(--accent); font-family: "JetBrains Mono", monospace; font-size: 10pt; margin-right: 6pt; }
+h3 { font-size: 10.5pt; font-weight: 650; margin: 10pt 0 3pt; break-after: avoid; }
+p { margin: 0 0 6pt; }
+ul, ol { margin: 0 0 6pt; padding-left: 15pt; }
+li { margin-bottom: 2pt; }
+code, .mono { font-family: "JetBrains Mono", "DejaVu Sans Mono", monospace; font-size: 8.4pt; }
+.eyebrow { font-size: 8pt; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
+.sub { color: var(--muted); font-size: 10pt; margin-bottom: 10pt; }
+.meta { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; border: 1px solid var(--line); border-radius: 4px; margin: 10pt 0 4pt; }
+.meta div { padding: 6pt 8pt; border-right: 1px solid var(--line); }
+.meta div:last-child { border-right: 0; }
+.meta b { display: block; font-family: "JetBrains Mono", monospace; font-size: 11pt; font-weight: 500; }
+.meta span { color: var(--muted); font-size: 7.8pt; }
+table { border-collapse: collapse; width: 100%; margin: 4pt 0 8pt; font-size: 8.6pt; }
+tr { break-inside: avoid; }
+th { text-align: left; font-size: 7.6pt; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--ink); padding: 3pt 5pt; }
+td { border-bottom: 1px solid var(--line); padding: 3.5pt 5pt; vertical-align: top; }
+td.num { text-align: right; font-family: "JetBrains Mono", monospace; font-size: 8.2pt; white-space: nowrap; }
+.formula { font-family: "JetBrains Mono", monospace; font-size: 8.6pt; background: var(--soft); border-left: 2px solid var(--accent); padding: 6pt 9pt; margin: 4pt 0 8pt; white-space: pre-wrap; break-inside: avoid; }
+.note { border: 1px solid var(--line); border-left: 3px solid var(--warn); background: var(--warnsoft); padding: 6pt 9pt; margin: 6pt 0 8pt; font-size: 9pt; break-inside: avoid; }
+.flow { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5pt; margin: 6pt 0 10pt; break-inside: avoid; }
+.flow > div { border: 1px solid var(--line); border-top: 2px solid var(--accent); border-radius: 3px; padding: 5pt 6pt; font-size: 8pt; }
+.flow b { display: block; font-size: 8.6pt; margin-bottom: 2pt; }
+.flow .t { color: var(--muted); font-family: "JetBrains Mono", monospace; font-size: 7.4pt; margin-top: 4pt; }
+.tag { display: inline-block; font-size: 7pt; font-weight: 600; letter-spacing: .04em; padding: 0 4pt; border-radius: 2px; text-transform: uppercase; }
+.live { background: #e3f3ea; color: #17643a; } .off { background: var(--soft); color: var(--accent); } .est { background: var(--warnsoft); color: var(--warn); }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 14pt; }
+.footer { margin-top: 16pt; color: var(--muted); font-size: 8pt; border-top: 1px solid var(--line); padding-top: 6pt; }
+</style>
+</head>
+<body>
+
+<div class="eyebrow">Methodology · version 1 · 23-Nov-2026</div>
+<h1>NSE Ratio-Spread Scanner</h1>
+<p class="sub">How the Docker service finds call and put ratio spreads, butterflies and broken-wing butterflies on NSE stock options, prices them on live quotes, computes NSE margin and Dhan charges, and decides what to alert. It is an analysis tool. It never places orders.</p>
+
+<div class="meta">
+  <div><b>218</b><span>F&amp;O stocks checked per cycle</span></div>
+  <div><b>12</b><span>ratio structures × 2 sides</span></div>
+  <div><b>≈ 90,000</b><span>structures priced per cycle</span></div>
+  <div><b>≈ 7 min</b><span>per cycle (15-min schedule)</span></div>
+</div>
+
+<h2><span class="n">1</span>Architecture</h2>
+<div class="flow">
+  <div><b>Scheduler</b>Every 15 minutes, on the clock. Checks NSE market status first.<div class="t">server.py</div></div>
+  <div><b>NseKit-MCP</b>Runs inside the container as a stdio MCP server; the scanner calls its tools over JSON-RPC.<div class="t">mcpclient.py</div></div>
+  <div><b>NSE Clearing files</b>SPAN risk arrays, exposure margin (ELM), cash-market VaR, from nsearchives.<div class="t">data.py</div></div>
+  <div><b>Engine</b>Builds, prices, margins and scores every structure; ranks and deep-dives the best.<div class="t">engine.py · rank.py · detail.py</div></div>
+  <div><b>Outputs</b>HTML report, JSON API, alerts to log, Telegram or webhook.<div class="t">report.py · alerts.py</div></div>
+</div>
+<p>Everything runs in one container on your own machine. State (cached chains, SPAN arrays, volatility, the latest report and alert history) lives in the <code>/data</code> volume, so a restart resumes where it left off.</p>
+
+<h2><span class="n">2</span>Data sources</h2>
+<table>
+<tr><th>Input</th><th>Source</th><th>Refresh</th><th>Label</th></tr>
+<tr><td>Option chain: bid, ask, LTP, OI, volume, NSE IV, underlying value, fetch time</td><td>NseKit-MCP <code>fno_live_option_chain(symbol, expiry)</code></td><td>Every cycle</td><td><span class="tag live">live</span></td></tr>
+<tr><td>Market status</td><td><code>market_live_status</code></td><td>Every cycle</td><td><span class="tag live">live</span></td></tr>
+<tr><td>F&amp;O universe, lot sizes, ban list, expiry dates</td><td><code>list_of_fno_stocks</code>, <code>fno_lot_sizes</code>, <code>fno_ban_list</code>, <code>fno_expiry_dates</code></td><td>Daily</td><td><span class="tag off">official</span></td></tr>
+<tr><td>Board meetings, dividends, splits up to expiry</td><td><code>corporate_board_meetings</code>, <code>corporate_actions</code></td><td>Daily</td><td><span class="tag off">official</span></td></tr>
+<tr><td>SPAN risk arrays (16 scenarios per contract), futures and spot prices</td><td>NSE Clearing <code>nsccl.YYYYMMDD.iN.zip</code> (intraday) or <code>.s.zip</code> (end of day)</td><td>When a newer file appears</td><td><span class="tag off">official</span></td></tr>
+<tr><td>Exposure margin (ELM) rates, including additional ELM</td><td>NSE <code>ael_DDMMYYYY.csv</code></td><td>Daily</td><td><span class="tag off">official</span></td></tr>
+<tr><td>Cash-market VaR + ELM rate (for delivery margin)</td><td>NSE Clearing <code>C_VAR1_DDMMYYYY_N.DAT</code></td><td>Daily</td><td><span class="tag off">official</span></td></tr>
+<tr><td>Realised volatility (HV20, HV60)</td><td><code>equity_eod_bhavcopy</code>, last ~64 trading days</td><td>Daily, incremental</td><td><span class="tag off">official</span></td></tr>
+<tr><td>Broker charges</td><td>Dhan tariff, read from dhan.co/pricing on 23-Nov-2026</td><td>Hard-coded</td><td><span class="tag est">update if changed</span></td></tr>
+</table>
+<p>Realised volatility is the only input built from end-of-day data, because it measures how much the stock actually moved over past days. Every price, breakeven, P&amp;L and margin figure uses the live chain snapshot from the same cycle.</p>
+
+<h2><span class="n">3</span>The scan cycle</h2>
+<ol>
+<li><b>Market gate.</b> If NSE's capital market is not open, the cycle is skipped (unless forced with <code>POST /api/scan</code>).</li>
+<li><b>Daily refresh</b> (first cycle of the day): universe, lots, ban list, events, ELM, VaR, missing bhavcopies → volatility.</li>
+<li><b>Expiry.</b> Pick the target expiry (section 4).</li>
+<li><b>SPAN.</b> Probe NSE Clearing for the freshest file (today's end-of-day, then intraday i9…i1, then previous days). Parse only the target expiry's option series when the file is new.</li>
+<li><b>Chains.</b> Fetch every stock's chain for the target expiry (about 1–1.3 s each, within NseKit's built-in 0.35 s rate limit).</li>
+<li><b>Price and score</b> every structure (sections 5–10), rank, deep-dive the top 3, and re-fetch those three chains to confirm the legs still trade near the scanned prices.</li>
+<li><b>Publish</b> the HTML report and JSON, then apply the alert rules (section 11).</li>
+</ol>
+<p>Measured on 23-Nov-2026 inside the container: daily refresh about 70 s, SPAN parse 3 s, 218 chains in 3.6 min, pricing, ranking and deep dives about 2 min; 7 minutes in total. If a cycle is still running when the next tick arrives, that tick is skipped.</p>
+
+<h2><span class="n">4</span>Expiry selection</h2>
+<p><code>TARGET_EXPIRY=auto</code> (default) takes the first monthly stock-option expiry at least <code>MIN_DTE</code> days away (default 7). Today's expiry is never scanned. On 23-Nov-2026 (November expiry day) it selects 29-Dec-2026 and keeps it until 22-Dec, then rolls to January, so positions are never suggested inside the physical-settlement window. A fixed date such as <code>TARGET_EXPIRY=29-Dec-2026</code> pins the expiry and falls back to auto once it is within <code>MIN_DTE</code> days.</p>
+
+<h2><span class="n">5</span>Universe and liquidity filters</h2>
+<table>
+<tr><th>Stage</th><th>Rule</th></tr>
+<tr><td>Stock excluded</td><td>In F&amp;O ban · no lot size or SPAN arrays for the target expiry (contract not listed) · chain fetch failed · forward cannot be inferred</td></tr>
+<tr><td>Strike usable for pricing</td><td>Two-sided quote (bid &gt; 0, ask ≥ bid) · spread ≤ 20% of mid · OI or volume ≥ 20 contracts · present in the SPAN file</td></tr>
+<tr><td>Structure eligible for ranking</td><td>Every leg: OI ≥ 50 contracts and spread ≤ 10% of mid · total capital ≤ ₹5 lakh · net max profit &gt; 0 · uncapped structures need the dangerous breakeven ≥ 1σ away</td></tr>
+</table>
+
+<h2><span class="n">6</span>Strategy universe</h2>
+<div class="two">
+<div><h3>Two legs: buy a, sell b</h3><p>1:2, 1:3, 1:4, 2:3, 2:5. The long leg is nearer the money; the shorts are further out-of-the-money. Net short options, so risk is uncapped (calls) or large (puts).</p></div>
+<div><h3>Three legs: buy a, sell b, buy c</h3><p>1:2:1 (butterfly; broken-wing when gaps differ), 1:3:2, 1:3:1, 2:3:1, 1:4:3, 1:4:2, 2:5:3. Defined risk when a + c ≥ b.</p></div>
+</div>
+<p>Calls and puts are scanned separately. Strike positions are searched independently of the ratio: long leg from −10% to +12% moneyness (in the out-of-the-money direction), shorts up to 30% out, wings up to 40% out, with any strike gaps. Ratios are whole lots, at most 5 lots per leg; one order per leg. A vectorised pre-filter keeps the best few hundred per stock and side (by ROI, expected value, probability, lowest debit and stress loss) before the detailed calculations, which removes duplicates and pointless lot sizes.</p>
+
+<h2><span class="n">7</span>Pricing and payoff</h2>
+<p>Buys are priced at the ask and sells at the bid. A strike with no two-sided quote is not used, so no figure is an LTP estimate. Net premium is <span class="mono">Σ lots × lot size × price</span> (positive = debit).</p>
+<p>The expiry payoff is piecewise linear with kinks only at strikes. It is evaluated exactly at every chain strike, at zero and far above the top strike. That gives exact breakevens, maximum profit and the price where it occurs, and maximum loss. A call structure with more shorts than longs is marked <b>unlimited</b>, and no finite maximum loss is ever shown for it. A put structure with net shorts is marked <b>substantial</b>, with its loss at a stock price of zero. The <b>dangerous breakeven</b> is the one beyond the short strikes.</p>
+
+<h2><span class="n">8</span>Forward, implied volatility and the smile</h2>
+<div class="formula">F = median over near-ATM strikes of [ K + (Call_mid − Put_mid) · e^(rT) ]        r = 7% (NSE SPAN file rate)
+Fallback when quotes are too wide: F = SPAN December futures price × (live spot / SPAN spot)
+IV per strike: Black-76 on F, solved from the mid price; smile = out-of-the-money side at each strike</div>
+<p>Using the forward instead of spot matters when a dividend or event is priced in. On 23-Nov-2026, HYUNDAI's forward sat 3.4% below cost of carry. Pricing off spot with one ATM IV would have understated its upside risk. A forward more than 1% away from carry is flagged in every report row.</p>
+
+<h2><span class="n">9</span>Margin and capital</h2>
+<p>Margin is computed from NSE Clearing's own SPAN file, so hedge benefits come from the official risk scenarios rather than a rule of thumb. For a position with signed quantities q<sub>i</sub> (shares, + long) and risk arrays RA<sub>i,s</sub> (loss per share of a long, 16 scenarios s):</p>
+<div class="formula">Scan risk      = max(0, max_s Σ q_i · RA_i,s)
+Option value   NOV = Σ q_i · p_i          (SPAN-file option prices)
+SPAN required  = max(0, Scan risk − NOV)
+ELM            = Σ over short legs |q_i| · Spot · ELM rate   (3.5% normal, 5.25% deep OTM, + any additional ELM)
+Total capital  = max(SPAN required + ELM + Net premium,  ELM + max(Net premium, 0))
+Peak funding   = Long premium paid + SPAN required + ELM   (buy legs first, before short premium is credited)</div>
+<p>Short-option minimum charge is zero in the current NSE file, and calendar-spread charges do not apply to single-expiry positions. Physical-settlement margin is estimated as 10%, 25%, 45% and 70% of the NSE cash VaR+ELM rate on the net in-the-money delivery value from E-4 to E-1, with full delivery value due at expiry.</p>
+<div class="note"><b>Unverified against your broker.</b> These figures follow NSE's published files, but Dhan's live basket margin was not available to the scanner. A low debit never implies low capital: on 23-Nov-2026 an SBIN 1:2 call ratio cost a ₹1,200 debit but needed about ₹1.29 lakh of capital. Check every position in your broker's basket before trading.</div>
+
+<h2><span class="n">10</span>Charges (Dhan, F&amp;O options)</h2>
+<table>
+<tr><th>Item</th><th>Rate</th><th>Applied to</th></tr>
+<tr><td>Brokerage</td><td class="num">₹20</td><td>Per executed order (one per leg; lots in one order count once). Also on expired, exercised or assigned contracts.</td></tr>
+<tr><td>NSE transaction charge</td><td class="num">0.0355299%</td><td>Premium turnover</td></tr>
+<tr><td>STT</td><td class="num">0.15%</td><td>Sell-side premium; and intrinsic value of exercised options</td></tr>
+<tr><td>SEBI fee</td><td class="num">0.0001%</td><td>Turnover</td></tr>
+<tr><td>Stamp duty</td><td class="num">0.003%</td><td>Buy-side premium</td></tr>
+<tr><td>IPFT</td><td class="num">0.0000001%</td><td>Turnover</td></tr>
+<tr><td>GST</td><td class="num">18%</td><td>Brokerage + transaction + SEBI + IPFT</td></tr>
+<tr><td>Physical delivery</td><td class="num">0.10% + 0.1% STT</td><td>Contract value of delivered shares, plus delivery stamp and exchange charges</td></tr>
+</table>
+<p>Three cost paths are reported for the top setups: entry plus normal exit (square off near expiry at the max-profit price, worthless legs left to expire), entry plus one adjustment plus exit, and holding through expiry with physical settlement. Gross profit, charges and net profit are shown separately.</p>
+
+<h2><span class="n">11</span>Probability, expected value and stress</h2>
+<ul>
+<li><b>P(profit), market-implied.</b> P(S<sub>T</sub> &gt; X) ≈ N(d<sub>2</sub>(F, X, σ(X))) using each strike's own smile IV, integrated over the payoff. This uses the market's own risk-neutral pricing, so it is not a forecast.</li>
+<li><b>Expected net P&amp;L.</b> Log-normal around the forward with σ = max(HV20, HV60), minus round-trip charges. A positive value means the structure is cheap relative to how much the stock has actually been moving.</li>
+<li><b>Stress.</b> P&amp;L at a 2.5σ and 3σ adverse move, with σ = max(ATM IV, realised, smile IV 15% out-of-the-money on that side).</li>
+<li><b>Pre-expiry.</b> Mark-to-market at 14 and 7 days before expiry by Black-76 with the smile held fixed by strike, plus a second case with every IV 5 points higher.</li>
+</ul>
+
+<h2><span class="n">12</span>Scoring and ranking</h2>
+<p>Candidates are split into four groups (call/put × defined/uncapped) and percentile-ranked inside each group, so uncapped structures never compete with capped ones on ROI.</p>
+<table>
+<tr><th>Metric</th><th class="num">Defined risk</th><th class="num">Uncapped</th></tr>
+<tr><td>Expected net P&amp;L ÷ capital</td><td class="num">30%</td><td class="num">25%</td></tr>
+<tr><td>P(profit), market-implied</td><td class="num">20%</td><td class="num">15%</td></tr>
+<tr><td>Net max profit ÷ capital</td><td class="num">20%</td><td class="num">15%</td></tr>
+<tr><td>Max loss ÷ capital</td><td class="num">15%</td><td class="num">–</td></tr>
+<tr><td>Dangerous breakeven distance in σ</td><td class="num">–</td><td class="num">20%</td></tr>
+<tr><td>2.5σ stress loss ÷ capital</td><td class="num">–</td><td class="num">15%</td></tr>
+<tr><td>Liquidity (log of weakest leg's OI)</td><td class="num">8%</td><td class="num">5%</td></tr>
+<tr><td>Charges ÷ max profit</td><td class="num">7%</td><td class="num">5%</td></tr>
+</table>
+<p>The size of the debit never enters a safety measure. Breakeven safety is measured in σ, and risk is measured by worst loss against capital. The overall shortlist ranks by expected net P&amp;L per rupee of worst plausible loss: maximum loss if capped, the 3σ stress loss if not. Tables show one structure per stock.</p>
+
+<h2><span class="n">13</span>Alerts: when a setup counts as "found"</h2>
+<table>
+<tr><th>Rule</th><th class="num">Default</th></tr>
+<tr><td>Defined risk only (longs ≥ shorts)</td><td class="num">yes</td></tr>
+<tr><td>Composite score ≥ (defined-risk scores top out near 0.78)</td><td class="num">0.75</td></tr>
+<tr><td>P(profit), market-implied ≥</td><td class="num">35%</td></tr>
+<tr><td>Expected net P&amp;L &gt;</td><td class="num">₹0</td></tr>
+<tr><td>Net max profit ÷ capital ≥</td><td class="num">15%</td></tr>
+<tr><td>Total capital ≤</td><td class="num">₹3 lakh</td></tr>
+<tr><td>Maximum setups per scan (one per stock)</td><td class="num">5</td></tr>
+</table>
+<p>All found setups appear in <code>/api/alerts</code> every cycle. A setup is announced through the log, Telegram or webhook only the first time it appears that day. All thresholds are environment variables. On the 12:00 IST test run of 23-Nov-2026 the rules found five setups: RELIANCE, ICICIBANK and MARUTI put 2:3:1, and TMPV and SWIGGY call 2:3:1.</p>
+
+<h2><span class="n">14</span>Adjustment engine</h2>
+<p>For each top setup the scanner reprices four plans with the current smile and SPAN arrays, and recomputes margin, breakevens, payoff and charges after each one. These are indicative plans, not a guaranteed recovery.</p>
+<ol type="A">
+<li>Buy back the excess short lots when spot reaches the short strike with 14 days left (leaves a defined-risk vertical).</li>
+<li>Add long wings beyond the short strike at that trigger (turns the ratio into a broken-wing butterfly).</li>
+<li>Convert to defined risk at entry by adding the wing at today's ask.</li>
+<li>Exit everything if spot reaches halfway from the short strike to the dangerous breakeven (14 and 7 days left), or at 50% of maximum loss for capped structures.</li>
+</ol>
+
+<h2><span class="n">15</span>Limitations</h2>
+<ul>
+<li>Probabilities and expected values are model outputs from IV and realised volatility. They are not predictions.</li>
+<li>Stock options settle physically. Positions should be closed before E-4; holding into expiry needs cash or shares for delivery.</li>
+<li>Quotes come from one snapshot per stock, taken over about five minutes. Each stock's legs share one timestamp, but different stocks may differ by a few minutes.</li>
+<li>NseKit-MCP reads NSE's public website. Site changes or IP blocking cause fetch failures, which are reported per stock rather than filled in.</li>
+<li>Dhan charges are hard-coded and must be updated if the tariff changes. Margin is unverified against the broker.</li>
+</ul>
+
+<h2><span class="n">16</span>Running it on your laptop</h2>
+<p>Requirements: Docker Desktop (or Docker Engine), about 1 GB RAM and 1 GB disk, and outbound HTTPS to <code>www.nseindia.in</code> and <code>nsearchives.nseindia.com</code>. The laptop must be awake during market hours for scans to run.</p>
+<div class="formula"># Option 1, build from source (native on Intel, AMD and Apple silicon)
+cd nse-ratio-scanner
+cp .env.example .env          # optional: thresholds, Telegram, webhook
+docker compose up -d --build
+
+# Option 2, load the prebuilt x86-64 image
+docker load -i nse-ratio-scanner_amd64.tar.gz
+docker run -d --name nse-scanner --restart unless-stopped -p 8080:8080 \
+  -v nse-data:/data --env-file .env nse-ratio-scanner:latest
+
+# Use it
+open http://localhost:8080            # report, refreshes every 5 minutes
+curl -s localhost:8080/api/alerts     # setups found in the latest scan
+curl -s -X POST localhost:8080/api/scan   # scan now, even outside market hours</div>
+
+<div class="footer">Analysis tool only. Not investment advice. No orders are placed. Verify every position, margin and charge with your broker before trading.</div>
+</body>
+</html>
