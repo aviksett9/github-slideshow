@@ -1,0 +1,28 @@
+name = "delta-telegram-worker"
+main = "src/index.js"
+compatibility_date = "2025-11-01"
+
+# Runs every minute (the most often Cloudflare cron triggers can fire).
+[triggers]
+crons = ["* * * * *"]
+
+[vars]
+# Delta Exchange India. Use "https://api.delta.exchange" for Delta global.
+DELTA_BASE_URL = "https://api.india.delta.exchange"
+
+# Create with: npx wrangler kv namespace create STATE
+# then paste the id it prints below.
+[[kv_namespaces]]
+binding = "STATE"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+
+[observability]
+enabled = true
+
+# Secrets (set with `npx wrangler secret put NAME`, never put them in this file):
+#   TELEGRAM_BOT_TOKEN       from @BotFather
+#   TELEGRAM_CHAT_ID         your chat id (send /chatid to the bot after setup)
+#   TELEGRAM_WEBHOOK_SECRET  any random string, A-Z a-z 0-9 _ - (1-256 chars)
+#   API_TOKEN                random string protecting /notify and /setup
+#   DELTA_API_KEY            optional, enables fills/positions/balance
+#   DELTA_API_SECRET         optional, pairs with DELTA_API_KEY

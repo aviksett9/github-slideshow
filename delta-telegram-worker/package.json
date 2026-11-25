@@ -1,0 +1,15 @@
+{
+  "name": "delta-telegram-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Delta Exchange price alerts and trade-fill notifications to Telegram, on Cloudflare Workers",
+  "scripts": {
+    "dev": "wrangler dev --test-scheduled",
+    "deploy": "wrangler deploy",
+    "test": "node --test test/*.test.js"
+  },
+  "devDependencies": {
+    "wrangler": "^4.160.0"
+  }
+}
