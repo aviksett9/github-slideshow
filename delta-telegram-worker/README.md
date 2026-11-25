@@ -98,11 +98,20 @@ The text is sent as plain text. Add `"parse_mode": "HTML"` to use Telegram forma
 /chatid                  show this chat's id
 ```
 
-## How it stays within the free plan
+## Runs on the Workers Free plan
 
-- The cron runs every minute (1,440 runs a day; the free limit is 100,000 requests a day).
-- KV is written **only when something changes**: an alert fires, a new fill arrives or an error changes. A quiet day uses almost no writes. The free plan allows 1,000 writes a day.
-- Up to 30 alerts, so each run stays under the free plan's subrequest limit.
+Checked against Cloudflare's published limits (November 2026):
+
+| Free-plan limit | This Worker |
+|---|---|
+| 100,000 requests a day | 1,440 cron runs a day plus your commands |
+| 5 cron triggers per account | uses 1 |
+| 10 ms CPU per invocation (waiting on network doesn't count) | a few ms: small JSON responses plus one HMAC signature |
+| 50 subrequests (fetch + KV calls) per invocation | typically 5–10; tested worst case is 34 (25 alerts firing and 50 fills in the same minute) |
+| KV: 1,000 writes/deletes a day | writes only when something changes (alert fires, new fill, `/alert` commands) |
+| KV: 100,000 reads a day | about 3 reads a minute, roughly 4,300 a day |
+
+To stay under the subrequest limit, alerts are capped at 25, and the alerts or fills found in one run are batched into as few Telegram messages as possible.
 
 ## Limits
 

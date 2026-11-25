@@ -93,6 +93,36 @@ function errorText(err) {
   return `⚠️ ${escapeHtml(describeDeltaError(err))}`;
 }
 
+const MESSAGE_BUDGET = 3800; // Telegram allows 4096; leave room for entities
+
+// Packs one line per item into as few Telegram messages as possible: every
+// sendMessage is a subrequest, and the free plan allows 50 per invocation.
+// Returns the items whose message was delivered.
+async function sendBatched(d, items, render) {
+  const delivered = [];
+  let batch = [];
+  let text = '';
+  const flush = async () => {
+    if (!batch.length) return;
+    try {
+      await d.tg.sendMessage(d.chatId, text);
+      delivered.push(...batch);
+    } catch (err) {
+      console.error(String(err));
+    }
+    batch = [];
+    text = '';
+  };
+  for (const item of items) {
+    const line = render(item);
+    if (batch.length && text.length + 1 + line.length > MESSAGE_BUDGET) await flush();
+    text += (text ? '\n' : '') + line;
+    batch.push(item);
+  }
+  await flush();
+  return delivered;
+}
+
 // ---------------------------------------------------------------- commands
 
 async function cmdPrice(d, args) {
@@ -264,19 +294,14 @@ export async function checkAlerts(env) {
   const fired = state.items.filter((a) => isTriggered(a, prices.get(a.symbol)));
   if (!fired.length) return;
 
-  const sent = new Set();
-  for (const a of fired) {
-    try {
-      await d.tg.sendMessage(
-        d.chatId,
-        `🔔 <b>${escapeHtml(a.symbol)}</b> mark price ${formatNumber(prices.get(a.symbol))} ` +
-          `is ${a.op === '>' ? 'at/above' : 'at/below'} ${formatNumber(a.price)} (alert #${a.id})`,
-      );
-      sent.add(a.id);
-    } catch (err) {
-      console.error(String(err));
-    }
-  }
+  const delivered = await sendBatched(
+    d,
+    fired,
+    (a) =>
+      `🔔 <b>${escapeHtml(a.symbol)}</b> mark price ${formatNumber(prices.get(a.symbol))} ` +
+      `is ${a.op === '>' ? 'at/above' : 'at/below'} ${formatNumber(a.price)} (alert #${a.id})`,
+  );
+  const sent = new Set(delivered.map((a) => a.id));
   if (!sent.size) return;
 
   // Re-read just before writing so an alert added meanwhile isn't lost.
@@ -327,8 +352,13 @@ export async function checkFills(env) {
   const fresh = fills.filter((f) => !seenSet.has(String(f.id))).reverse(); // oldest first
   if (!fresh.length) return;
 
-  for (const f of fresh) await d.tg.sendMessage(d.chatId, describeFill(f));
-  const merged = [...new Set([...ids, ...seen])].slice(0, SEEN_FILLS_KEEP);
+  // Batched, so even 50 new fills (one big order filling in parts) take
+  // two or three messages. Only delivered fills are marked as seen; the
+  // rest are retried next minute.
+  const delivered = new Set((await sendBatched(d, fresh, describeFill)).map((f) => String(f.id)));
+  if (!delivered.size) return;
+  const nowSeen = ids.filter((id) => seenSet.has(id) || delivered.has(id));
+  const merged = [...new Set([...nowSeen, ...seen])].slice(0, SEEN_FILLS_KEEP);
   await d.kv.put(KEY_FILLS_SEEN, JSON.stringify(merged));
 }
 

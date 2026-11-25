@@ -2,7 +2,7 @@ import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 
-import worker, { checkAlerts, checkFills, handleUpdate } from '../src/index.js';
+import worker, { checkAlerts, checkFills, handleUpdate, runScheduled } from '../src/index.js';
 import { DeltaClient, buildQuery, hmacSha256Hex } from '../src/delta.js';
 import { isTriggered, parseAlert } from '../src/alerts.js';
 
@@ -12,17 +12,21 @@ class MemoryKV {
   constructor() {
     this.map = new Map();
     this.writes = 0;
+    this.ops = 0; // every call counts as a subrequest on Workers
   }
   async get(key, type) {
+    this.ops += 1;
     const v = this.map.has(key) ? this.map.get(key) : null;
     if (v === null) return null;
     return type === 'json' ? JSON.parse(v) : v;
   }
   async put(key, value) {
+    this.ops += 1;
     this.writes += 1;
     this.map.set(key, value);
   }
   async delete(key) {
+    this.ops += 1;
     this.writes += 1;
     this.map.delete(key);
   }
@@ -252,9 +256,36 @@ test('fills: first run seeds silently, later runs notify only new fills', async 
     ...fills,
   ];
   await checkFills(env);
-  assert.equal(sent.length, 2);
-  assert.match(sent[0].text, /BUY 1 <b>ETHUSD<\/b> @ 3,000/); // oldest first
-  assert.match(sent[1].text, /SELL 5 <b>BTCUSD<\/b> @ 61,000/);
+  assert.equal(sent.length, 1); // batched into one message
+  assert.match(sent[0].text, /BUY 1 <b>ETHUSD<\/b> @ 3,000.*\n.*SELL 5 <b>BTCUSD<\/b> @ 61,000/); // oldest first
+
+  await checkFills(env); // already delivered: not sent again
+  assert.equal(sent.length, 1);
+});
+
+test('worst-case cron run stays under the free-plan 50 subrequest limit', async () => {
+  const env = makeEnv({ DELTA_API_KEY: 'k', DELTA_API_SECRET: 's' });
+  // 25 alerts on 25 different symbols
+  for (let i = 0; i < 25; i++) prices[`SYM${i}USD`] = 100;
+  for (let i = 0; i < 25; i++) await handleUpdate(msg(`/alert SYM${i}USD > 150`), env);
+  await handleUpdate(msg('/alert SYM0USD > 1'), env); // 26th is refused
+  assert.match(sent.at(-1).text, /already have 25 alerts/);
+  await checkFills(env); // seed fills state
+
+  // Every alert fires and one order fills in 50 parts in the same minute.
+  for (let i = 0; i < 25; i++) prices[`SYM${i}USD`] = 200;
+  fills = Array.from({ length: 50 }, (_, i) => ({
+    id: 1000 - i, side: 'buy', size: 1, price: '60000', product_symbol: 'BTCUSD', role: 'taker', commission: '0.01',
+  }));
+  sent = [];
+  calls = [];
+  const kvOps = () => env.STATE.ops;
+  const before = kvOps();
+  await runScheduled(env);
+  const subrequests = calls.length + (kvOps() - before);
+  assert.ok(subrequests <= 50, `cron run used ${subrequests} subrequests`);
+  assert.equal(sent.filter((s) => /🔔/.test(s.text)).map((s) => s.text.split('\n').length).reduce((a, b) => a + b, 0), 25);
+  assert.equal(sent.filter((s) => /Fill:/.test(s.text)).map((s) => s.text.split('\n').length).reduce((a, b) => a + b, 0), 50);
 });
 
 test('fills: an auth error is reported once, recovery is reported once', async () => {

@@ -1,6 +1,9 @@
 // Price-alert parsing and evaluation (pure functions, easy to test).
 
-export const MAX_ALERTS = 30; // keeps each cron run under the free-plan subrequest limit
+// Each alert symbol costs one ticker fetch per cron run; the Workers free plan
+// allows 50 subrequests (fetch + KV calls) per invocation. 25 leaves headroom
+// for KV, the fills poll and the batched Telegram messages.
+export const MAX_ALERTS = 25;
 
 const ALERT_RE = /^([A-Za-z0-9_.-]+)\s*(>=|<=|>|<|above|below)\s*([0-9]+(?:\.[0-9]+)?)$/i;
 
